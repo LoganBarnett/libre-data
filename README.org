@@ -1,0 +1,220 @@
+#+title:     Libre Data
+#+author:    Logan Barnett
+#+email:     logustus@gmail.com
+#+date:      <2023-09-04 Mon>
+#+language:  en
+#+file_tags:
+#+tags:
+
+* introduction
+
+Generalized data viewing and manipulation.
+
+Here be dragons!
+
+* reasoning
+
+The Internet is a wasteland and a trove simultaneously.  The content, in many
+ways, is what makes the trove.  The web and its structure is what makes it a
+wasteland.  Client side scripting is typically to fault for this.  While it can
+make for a pleasant browsing experience, it's hardly something standardized
+(even if you count clicking around on bunches of things), it's not accessible,
+and it doesn't allow for optimized workflows.  Web providers control your
+experience, be it via not providing a dark mode all the way to not displaying
+content in the order in which you wish to view it.  Every interface is bespoke,
+so even if a site does particularly well on supporting all of the notions we
+have here, it's just that one site and for each one of those there are thousands
+which throw all of these principles to the winds.
+
+Generalized data viewing and manipulation is what we need.  This brings us
+closer to the old green-screen TUI apps of yore.  In general:
+
+1. Data is displayed in whatever theme, style, etc is favored by that user.
+2. Data is ordered or cataloged in whatever way the user desires.
+3. Data manipulation and viewing actions are thought out and generally reusable
+   across a variety of data types.
+4. Data can be graphed from multiple sources.
+5. Data can be exported to a variety of useful formats.
+6. Data can be interfaced via a variety of methods - so someone could build a
+   TUI, and Emacs interface, or a web interface.
+7. This should be generally useful to people who are not power users or software
+   engineers, but it is not necessarily optimized for shallow experiences.
+8. This is optimized to individual users and not enterprise uses.
+
+To this effect, we should start by building a TUI application that allows for
+pulling in data sources.  This TUI can interface with a server that does all of
+the hard work.  Other interfaces can follow.
+
+An additional and critical principle is that we hold data ownership sacred.  The
+data is yours.  As such, all data sources are assumed to be local and only
+cache-miss operations will result in communication to various, remote services.
+Data retrieved is stored, and operations to remove services will be queued in
+the event of an outage.  This is much like IMAP for email.  With no connection,
+a service outage, or service blocking, you can still work with your data.
+
+To help with some of these things, all data sources can be decorated with
+additional data.  This allows us to hide data we don't want to see, or relate
+data graphs to one another.
+
+* roadmap
+** records
+
+Provide a generalized record-based system for summaries and details.  Later we
+can add a brief view (naming - something between summary and details).
+
+This allows us to view records in a spreadsheet-like form.  Records can be
+added, deleted, sorted, searched, and modified.  Records can also have detailed
+views.
+
+** integrations
+
+Integrations provide data sources for reading and writing data.  In addition,
+they can provide available operations, checks for operations, etc.
+
+For example, a Mastodon integration could inform Libre Data that you can delete
+your own posts or posts others have made on a Mastodon instance that you own,
+but it wouldn't allow you to do delete others posts on instances you do not own.
+If you don't wish to see them, you can decorate the posts with a value that can
+be filtered for.
+
+* model
+
+Some nomenclature:
+
++ Data Provider :: An adapter of sorts that allows data to be queried and
+  provides remote interactions.  Data providers can be queried for capabilities
+  they provide, queried metadata about the data they provide, as well as
+  performing operations for the data.
++ Data Interface :: This is a collection of operations and visualizations for a
+  given bit of data.  This can be in the form of a spreadsheet-like interface,
+  where rows represent records and columns represent fields of data.  It can
+  also be a detailed view, a threaded view (such as email), or a plotted graph.
++ Service Provider :: This is an abstract notion of a remote or uncontrolled
+  source of data that can be interacted with or at least read from.  A data
+  provider will generally interact with a service provider.
+* technical design
+** TODO Fix provider nomenclature
+
+The use of "provider" here doesn't entirely agree with the definitions stated in
+[[model]].  Make sure to use the domain language consistently.
+
+** tracking changes
+
+All changes are tracked via history tables.  History tables take a payload and
+describe a transformation that occurs.  The data that is of interest, typically,
+is the "projection", or what is "right now".  You can think of the history as a
+double-entry ledger for your bank account, and the current balance is the
+projection of all entries in the ledger.  Thus the history tables must be able
+to account for all possible alterations.
+
+The three general operations will be:
+1. Creation - this can be very nuanced with very complex structures.  Multiple
+   creation events can stack up to keep the model simple.  To help with
+   integrity, a fixed creation date is used that all creation records share, as
+   well as a transaction ID.
+2. Alteration - This is an update.  Multiple updates can be made via a
+   transaction ID.  These span across all projections that are being updated.
+3. Expiry - This is effectively removal, but nothing is actually removed.  We
+   just record the value as no longer being in the projection.
+
+Each change will also have a source.
+
++ Service :: The service provider made the change to the data source, or your
+  view to it, on their end.  Service provider changes will be trivial to
+  override via consumer data.
++ Consumer :: This is you, the consumer of the data.  You can make arbitrary
+  alterations to a data source.
+
+By inspecting history, we should be able to determine if consumer data is in
+sync with the service provider data. For example, you could update an issue in
+your issue tracker with your local copy in Libre Data.  This would be
+represented as a consumer change.  Your local projection would show this change,
+but it is not yet published to the provider.  A publish operation would have to
+occur.  Once the publish operation occurs and Libre Data synchronizes with the
+service provider again, the service provider updates will be recorded and Libre
+Data should be able to identify that they are now synchronized.
+
+Publishing is an explicit operation.  It can be driven via automation though.
+Some data providers may prefer to synchronize with their service providers. See
+[[arbitrary operations]] for how this is conducted and tracked.
+
+** projection snapshots
+
+We expect data to be long lived, and some data sources will be particularly
+heavy.  While Libre Data is not designed for heavy load from multiple users, it
+should be sufficiently wieldy for frequent, single user access.  As such, we can
+record snapshots.  All tables that we design are assumed to have =valid_on= and
+=valid_until= fields (but perhaps with prefixes/suffixes).  For history tables,
+these fields will be explicitly stated.  Projections can be taken the moment we
+pull data on a particular record at a particular point in time.
+
+We could offer them up for garbage collection except for the most recent, or
+even records that have been flagged as "keep".  What the "keep" is connected to
+should matter.  It shouldn't be a general binary value but instead a pointer to
+something.  We could have a =snapshot_labels= table which provides labels that a
+snapshot can refer to.  If the label is removed or marked invalid, all of the
+snapshots attached to it are also removed.
+
+** arbitrary operations
+Libre Data can track any arbitrary operations made to service providers as well
+as the outcomes from that.  This way we get beyond the basic CRUD operations -
+not all services will accommodate a pure CRUD interface.
+
+As such, Libre Data tracks these operations.
+
+Sending an update to the ticket system can be as simple as updating a field, but
+it can also be more nuanced (such as closing the ticket).  These are generally
+going to be fairly simple operations that closely tie to CRUD.  Closing a ticket
+would just amount to changing the ticket's status from "open" to "closed".
+
+As you attempt to digest many well defined domains, you may notice that the
+domain already represents itself well via CRUD operations.  For example, Jenkins
+has "builds" which represent complex task execution.  To get Jenkins to run a
+task, simply create a new build.
+
+Data providers are strongly encouraged to model their interactions via CRUD.  To
+send an email, the email could be moved to a "sent" folder.  Any attempts to
+locally move the data to "sent" is the same as sending the email.  In the case
+of something like Outlook (which can "unsend" email), this would be represented
+by moving the email out of the "sent" folder.  Note that you will still have a
+copy of the email.  Outlook is one of the examples of why Libre Data was
+created.
+
+** consumption modeling example
+*** Jira
+
+For this example, we'll partly model Jira.
+
+Jira is a ticketing system for tracking tasks (Jira calls them "Issues").  The
+primary record of interest is issues.  Issues can relate to each other
+(many-to-many style), and there are other ways of flavoring tickets via fields
+such as Components and Labels (each of which an issue can have multiple of).
+Issues also have reporters, assignees, watchers, and otherwise participants that
+can all be tracked.  Issues are identified by the "key" field, which is
+generally a project-prefix and a number.
+
+There are also projects, to which issues belong.
+
+An example projection can look like this:
+
+=jira__issues=
+
+| key      | summary          | due_date | assignee | reporter | description                               |
+|----------+------------------+----------+----------+----------+-------------------------------------------|
+| OWL-1234 | Unleash the owls | tomorrow | Logan    | Logan    | Elaborate on why owls should be unleashed |
+
+And then labels can look like:
+
+=jira__labels=
+
+| name             |
+|------------------|
+| unleash-activity |
+| owls             |
+
+=jira__tissues__labels__join=
+
+| labels__name     | issues__key |
+|------------------+-------------|
+| owls             | OWL-1234    |
+| unleash-activity | OWL-1234    |
