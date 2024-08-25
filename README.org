@@ -218,3 +218,38 @@ And then labels can look like:
 |------------------+-------------|
 | owls             | OWL-1234    |
 | unleash-activity | OWL-1234    |
+
+** thought - event schema
+
+When capturing an event, it can be very tempting to simply have some sort of
+=payload= field which has a bunch of arbitrary JSON rolled into it.  The problem
+with this approach is it can make event auditing very difficult in the future,
+because all records must be parsed before they can be realized into any sort of
+filter.
+
+To help accommodate this, one approach we can take is to simply make sure that
+the surrogate keys of every table involved are added to an event table.  So in
+the case of our Jira ticket, we can have a Jira user, Jira ticket, Jira comment,
+and Jira attachment (this list is somewhat contrived).  These are nullable
+fields so they can be omitted easily.  But what if a particular event involves
+more than one of these entities?  For example, we could be deleting a ticket and
+all of its comments and attachments.  To address this, we can use a =atom_id=
+which tracks the operation across multiple event records.  In addition to an
+=atom_id= accommodating just this domain, it could also be used to help track
+many events that occur across multiple domains simultaneously.  To elaborate
+on our example:  Multiple events would be created to record the destruction of
+the Jira ticket and the ticket's comments.  These events would share the same
+=atom_id=.
+
+Investigation needs to be done to see if care must be taken for grouping these
+IDs when walking the events.  But it should be fine for any conceptual
+operations we need to take.
+
+An =atom_id= should probably be a UUID because auto-incrementing the value
+provides no value and makes portability between other LibreData systems require
+additional work to convert the data between systems.
+
+Many systems call this a transaction ID, and we could store it this way too.
+But be mindful that some domains may have a transaction ID of their own.
+Transaction IDs aren't necessarily atomic, so the =atom_id= nomenclature is the
+leading suggestion.
